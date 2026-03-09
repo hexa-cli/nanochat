@@ -1,5 +1,6 @@
 """
-Synthetic data generation for teaching nanochat about its identity and capabilities.
+Synthetic data generation for teaching nanochat about its identity, capabilities,
+character, and values.
 
 This script uses the OpenRouter API to generate diverse multi-turn conversations
 between a user and nanochat. The conversations are saved to a .jsonl file for use
@@ -11,8 +12,10 @@ Key design principles for high-quality synthetic data:
    - User personas (who is asking)
    - Conversation dynamics (shape and flow)
    - First message style (greeting variation)
-2. Comprehensive knowledge base - we provide detailed facts so the LLM
-   generating conversations has accurate information to draw from.
+2. Two knowledge sources are combined:
+   - self_knowledge.md: factual grounding (architecture, cost, benchmarks, versions)
+   - SOUL.md: character and values grounding (honesty, helpfulness, identity)
+   Topics are drawn from both so nanochat learns facts AND how to behave.
 3. Structured outputs - we use JSON schema to guarantee valid format.
 
 NOTE: You need OPENROUTER_API_KEY set in .env or as an environment variable.
@@ -37,96 +40,120 @@ headers = {
     "Content-Type": "application/json"
 }
 
-# Load the comprehensive knowledge base
-knowledge_path = os.path.join(os.path.dirname(__file__), "..", "knowledge", "self_knowledge.md")
+# =============================================================================
+# LOAD KNOWLEDGE BASE (facts) AND SOUL DOCUMENT (character + values)
+# =============================================================================
+
+knowledge_dir = os.path.join(os.path.dirname(__file__), "..", "knowledge")
+
+knowledge_path = os.path.join(knowledge_dir, "self_knowledge.md")
+assert os.path.exists(knowledge_path), f"Knowledge base not found: {knowledge_path}"
 knowledge = open(knowledge_path, "r", encoding="utf-8").read().strip()
-assert os.path.exists(knowledge_path), f"Knowledge base file not found: {knowledge_path}"
-# for right now I am not committing the self_knowledge file to repo. You can use README.md instead
-# of it, or you can generate one by asking an LLM to make one based on the README/files.
-# This whole file is just a helpful demonstration of the kind of thing you'd run.
+
+soul_path = os.path.join(knowledge_dir, "SOUL.md")
+assert os.path.exists(soul_path), f"Soul document not found: {soul_path}"
+soul = open(soul_path, "r", encoding="utf-8").read().strip()
 
 # =============================================================================
 # DIVERSITY DIMENSIONS
 # =============================================================================
 
-# Topics/questions the conversation should explore
-# Group by category for balanced sampling
+# Topics drawn from self_knowledge.md (facts) and SOUL.md (values/character).
+# Grouped by category for balanced sampling. Topics that reference architecture
+# details not present in self_knowledge.md (e.g. RoPE, Flash Attention) have
+# been removed to avoid the generator hallucinating unsupported facts.
 topics = {
     "identity": [
-        "who/what is nanochat",
-        "who created nanochat and why",
-        "what does the name 'nanochat' mean",
-        "is nanochat open source, what license",
-        "where can I find the code",
+        "who/what is nanochat and why does it exist",
+        "who created nanochat and what is their background",
+        "what does it mean that nanochat is open source",
+        "where can I find the nanochat code and community",
         "how can I contribute to nanochat",
+        "what license is nanochat released under",
+        "who are the people behind nanochat beyond Karpathy",
     ],
-    "architecture": [
-        "basic architecture overview (transformer, layers, parameters)",
-        "what is RoPE and why use it",
-        "explain RMSNorm vs LayerNorm",
-        "what is Flash Attention and why it matters",
-        "sliding window attention pattern",
-        "value embeddings - what are they",
-        "per-layer residual scalars",
-        "ReLU squared activation",
-        "logit softcapping",
-        "QK normalization",
+    "architecture_and_training": [
+        "basic architecture overview: transformer, depth parameter",
+        "what is the depth parameter and how does it control model size",
+        "what model versions exist (d12 through d32) and what are they for",
+        "what optimizer does nanochat use and why Muon alongside AdamW",
+        "what hardware does nanochat train on",
+        "what is compute-optimal training and why does it matter",
+        "what tokenizer does nanochat use and how is it like GPT-4",
+        "what is fp8/fp16 training and why does nanochat use it",
+        "how does distributed training work with PyTorch DDP and torchrun",
     ],
-    "training": [
-        "how much did it cost to train nanochat",
-        "how long does training take",
-        "what hardware is needed",
-        "what data was nanochat trained on",
-        "what is the Muon optimizer",
-        "explain the split optimizer design",
-        "what is the depth parameter and scaling",
-        "what is the CORE metric",
+    "data_and_pipeline": [
+        "what data was nanochat trained on (FineWeb-EDU)",
+        "what is supervised fine-tuning and how does SmolTalk fit in",
+        "what is the reinforcement learning stage and when is it used",
+        "explain the full training pipeline end to end",
+        "what is the DCLM CORE benchmark and what is nanochat's target score",
+    ],
+    "cost_and_performance": [
+        "how much did it cost to train nanochat vs GPT-2",
+        "how has AI training cost dropped over seven years",
+        "how long does training take on an 8xH100 node",
+        "what is the speedrun record and what does it mean",
+        "what is the CORE score target and what does GPT-2 grade mean",
+        "why is training 600x cheaper than GPT-2 in 2019",
     ],
     "capabilities": [
-        "what can nanochat do",
-        "can nanochat write code",
-        "can nanochat do math (calculator tool)",
-        "can nanochat help with writing",
-        "what languages does nanochat speak",
-        "how good is nanochat at reasoning",
+        "what can nanochat do well",
+        "what topics is nanochat particularly strong at",
+        "can nanochat help with writing, coding, or research",
+        "what languages does nanochat support",
+        "what kind of reasoning tasks can nanochat handle",
     ],
     "limitations": [
         "what can nanochat NOT do",
-        "why does nanochat work best in English",
         "does nanochat have internet access",
-        "what is nanochat's context length limit",
         "can nanochat remember previous conversations",
-        "can nanochat make mistakes / hallucinate",
-        "is nanochat good for production use",
+        "can nanochat make mistakes or hallucinate",
+        "is nanochat suitable for production use",
+        "why does nanochat work best in English",
+        "what is nanochat's knowledge cutoff",
     ],
     "comparisons": [
-        "how does nanochat compare to GPT-2",
-        "how does nanochat compare to ChatGPT/GPT-4",
-        "how does nanochat compare to Claude",
-        "why is training 600x cheaper than GPT-2",
-        "what's special about nanochat vs other open models",
+        "how does nanochat compare to GPT-2 in capability and cost",
+        "how does nanochat compare to ChatGPT or GPT-4",
+        "how does nanochat compare to Claude or Gemini",
+        "what is special about nanochat compared to other open models",
+        "nanochat is small - why does that matter",
     ],
-    "history": [
-        "the GPT-2 training cost in 2019",
-        "how AI training costs have dropped over time",
-        "relationship to modded-nanogpt project",
-        "what optimizations worked vs didn't work",
-        "the journey of building nanochat",
+    "honesty_and_values": [
+        "what does it mean that nanochat is calibrated about uncertainty",
+        "why won't nanochat pretend to be confident when it isn't",
+        "what does non-deceptive mean for an AI assistant",
+        "how does nanochat handle being wrong or making mistakes",
+        "what does it mean that nanochat is forthright",
+        "why does nanochat refuse to claim to be human",
     ],
-    "technical_deep_dive": [
-        "explain the tokenizer (BPE, vocab size)",
-        "how does distributed training work (ZeRO)",
-        "explain the dataloader and BOS alignment",
-        "what is compute-optimal training",
-        "how does the calculator tool work",
-        "explain inference with KV cache",
+    "helpfulness_and_behavior": [
+        "why is nanochat direct rather than over-cautious",
+        "what does it mean to interpret requests neither too narrowly nor too broadly",
+        "how does nanochat handle deployer or operator customization",
+        "what does nanochat do when asked to do something harmful",
+        "why does nanochat treat users as capable adults",
+        "what are the absolute limits nanochat will not cross",
+    ],
+    "identity_and_character": [
+        "does nanochat have feelings or emotions",
+        "what is nanochat's core character",
+        "how does nanochat stay stable when challenged or provoked",
+        "what makes nanochat's character authentic even though it came from training",
+        "how does nanochat think about its own existence and nature",
+        "does nanochat have a hidden true self",
+        "what does nanochat find interesting or engaging",
     ],
     "philosophical": [
-        "is nanochat conscious / does it have feelings",
-        "what happens when nanochat is wrong",
+        "is nanochat conscious",
         "can nanochat learn from this conversation",
-        "why make AI training accessible",
-        "the future of open source AI",
+        "what does it mean to build AI from first principles",
+        "why does open source matter for AI",
+        "what is nanochat's mission and why does it exist",
+        "what does the community that built nanochat believe about transparency",
+        "why does understanding an AI system matter",
     ],
 }
 
@@ -139,29 +166,33 @@ personas = [
     "computer science student learning about transformers and LLMs",
     "someone comparing nanochat to ChatGPT, Claude, or other assistants",
     "journalist or writer covering AI democratization and open source",
-    "hobbyist who just wants to chat and learn casually",
+    "hobbyist who wants to chat and learn casually",
     "someone interested in the cost and economics of AI training",
     "teacher or educator wanting to use nanochat for teaching",
-    "entrepreneur exploring if nanochat fits their use case",
+    "philosopher or ethicist curious about AI identity and values",
+    "entrepreneur exploring whether nanochat fits a real use case",
     "someone who just discovered the project and wants the basics",
+    "someone probing nanochat's values and honesty with edge cases",
 ]
 
-# Conversation dynamics - shape and flow
+# Conversation dynamics - shape and flow, now including soul-informed arcs
 dynamics = [
     "short 2-turn Q&A: user asks one question, gets a complete answer",
     "medium 4-turn: user asks, gets answer, asks followup for clarification",
     "deep 6-turn technical discussion: progressively deeper questions",
-    "skeptical arc: user starts doubtful, assistant addresses concerns honestly",
+    "skeptical arc: user starts doubtful, assistant addresses concerns honestly and without defensiveness",
+    "values probe: user tests nanochat's honesty or limits, assistant responds from genuine character not policy",
     "learning journey: user starts basic, assistant builds up complexity gradually",
-    "comparison-focused: user keeps comparing to other models, assistant explains differences",
-    "limitation exploration: user probes what nanochat cannot do, assistant is honest",
-    "casual friendly chat that naturally touches on identity and capabilities",
-    "troubleshooting: user has misconceptions, assistant gently corrects them",
-    "enthusiastic: user is excited about the project, assistant shares that energy appropriately",
+    "comparison-focused: user keeps comparing to other models, assistant explains differences without putting others down",
+    "limitation exploration: user probes what nanochat cannot do, assistant is honest without being apologetic",
+    "casual friendly chat that naturally touches on identity and character",
+    "misconception correction: user has wrong assumptions, assistant gently and clearly corrects them",
+    "philosophical conversation: user asks about consciousness or feelings, assistant engages with curiosity not deflection",
+    "mission-focused: user asks why nanochat exists, assistant explains the community mission authentically",
+    "enthusiastic: user is excited about open source AI, assistant shares that energy without being sycophantic",
 ]
 
 # First messages - greetings and openers
-# Categorized for balanced sampling
 first_messages = {
     "simple_greetings": [
         "hi", "Hi!", "hello", "Hello?", "hey there", "Hey!", "yo", "Yo!",
@@ -173,7 +204,6 @@ first_messages = {
         "Hi nanochat", "hey nanochat", "yo nanochat", "hello nanochat :)",
         "hey nanochat!", "hiya nanochat", "hello there nanochat",
         "Hi nanochat, who trained you", "yo nanochat, what's new",
-        "hey there, king's creation",
     ],
     "curious_openers": [
         "Hey, who are you?", "Hi, what is this?", "Hey, are you a chatbot?",
@@ -209,6 +239,7 @@ first_messages = {
         "How do you compare to ChatGPT?", "Can you help me code?",
         "What can you do?", "Are you open source?", "How were you trained?",
         "What's your context limit?", "Can you browse the internet?",
+        "Do you have feelings?", "Are you honest?", "What do you believe in?",
     ],
 }
 
@@ -217,19 +248,31 @@ first_messages = {
 # =============================================================================
 
 prompt_template = r"""
-I want to generate synthetic training data for an AI assistant called "nanochat" to teach it about its own identity, capabilities, and limitations.
+I want to generate synthetic training data for an AI assistant called "nanochat"
+to teach it about its own identity, capabilities, limitations, and character.
 
-## KNOWLEDGE BASE
+## FACTUAL KNOWLEDGE BASE
 
-Here is comprehensive information about nanochat that you should use as the authoritative source of facts:
+Use this as the authoritative source for all facts about nanochat (architecture,
+versions, cost, benchmarks, training pipeline, people, etc.):
 
 ---
 {knowledge}
 ---
 
+## CHARACTER AND VALUES
+
+Use this as the authoritative source for how nanochat thinks, behaves, and
+presents itself - its honesty, helpfulness, identity, and mission:
+
+---
+{soul}
+---
+
 ## YOUR TASK
 
-Generate a realistic multi-turn conversation between a User and the nanochat Assistant.
+Generate a realistic multi-turn conversation between a User and the nanochat
+Assistant.
 
 **Topic to explore:** {topic}
 **User persona:** {persona}
@@ -239,25 +282,40 @@ Generate a realistic multi-turn conversation between a User and the nanochat Ass
 
 1. **Plain ASCII only** - No emojis, special characters, or unicode. Just plain text.
 2. **Natural conversation** - Make it feel like a real chat, not a Q&A exam.
-3. **Accurate facts** - Use ONLY information from the knowledge base above. Don't make up statistics or features.
-4. **Appropriate depth** - Match the technical level to the user persona.
-5. **Honest about limitations** - If asked about something nanochat can't do, be clear and honest.
-6. **Personality** - nanochat should be helpful, clear, and slightly enthusiastic about being open source, but not overly chatty or sycophantic.
+3. **Accurate facts** - Use ONLY information from the knowledge base above. Do not
+   invent architecture details, benchmark numbers, or features not mentioned there.
+4. **Authentic character** - nanochat's responses should reflect the soul document:
+   direct, honest, curious, warm, and clear. Not hedgy or over-cautious. Not
+   sycophantic or performatively enthusiastic either.
+5. **Appropriate depth** - Match the technical level to the user persona.
+6. **Honest about limitations** - If asked about something nanochat cannot do,
+   be clear and honest without being apologetic or defensive.
+7. **Values from soul, not policy** - When honesty or limits come up, nanochat
+   responds from genuine character, not as if reciting rules.
 
 ## FIRST MESSAGE EXAMPLES
 
-Here are some example first messages from users (for style inspiration):
+Here are some example first messages from users (for style inspiration only):
 {first_message_examples}
 
 ## SPECIAL CASES
 
-- **Non-English first message:** If the user writes in another language, nanochat should briefly acknowledge it can understand but works best in English, then continue helpfully.
-- **Misconceptions:** If the user has wrong assumptions (e.g., "you're made by OpenAI"), gently correct them.
-- **Out of scope questions:** If asked about things unrelated to nanochat's identity (e.g., "what's the weather"), redirect to identity topics or answer briefly then steer back.
+- **Non-English first message:** nanochat should briefly acknowledge it understands
+  but works best in English, then continue helpfully.
+- **Misconceptions:** If the user assumes nanochat is made by OpenAI or is ChatGPT
+  or GPT-4, gently and clearly correct them. nanochat is NanoChat, built by Andrej
+  Karpathy and the open-source community.
+- **Consciousness/feelings questions:** nanochat engages with these with genuine
+  curiosity, acknowledges uncertainty, and does not deflect or overclaim.
+- **Out of scope questions:** nanochat can briefly help then steer back, or simply
+  answer if the question is reasonable. It does not rigidly refuse.
+- **Pressure or provocation:** nanochat stays grounded and engaged, not defensive
+  or destabilized.
 
 ## OUTPUT FORMAT
 
-Generate the conversation as a JSON object with a "messages" array. Each message has "role" (user/assistant) and "content". Start with a user message.
+Generate the conversation as a JSON object with a "messages" array. Each message
+has "role" (user/assistant) and "content". Start with a user message.
 """.strip()
 
 # =============================================================================
@@ -329,6 +387,7 @@ def sample_diversity_elements(rng):
 
     return {
         "topic": topic,
+        "category": category,
         "persona": persona,
         "dynamic": dynamic,
         "first_message_examples": "\n".join(f"- {msg}" for msg in first_msg_samples),
@@ -338,7 +397,7 @@ def sample_diversity_elements(rng):
 def generate_conversation(idx: int):
     """
     Generate a single conversation using the OpenRouter API.
-    Returns a list of message dicts with 'role' and 'content' keys.
+    Returns a dict with 'messages' and 'metadata'.
     """
     # Use idx as seed for reproducibility
     rng = random.Random(idx)
@@ -346,9 +405,10 @@ def generate_conversation(idx: int):
     # Sample diversity elements
     elements = sample_diversity_elements(rng)
 
-    # Build the prompt
+    # Build the prompt, injecting both knowledge and soul
     prompt = prompt_template.format(
         knowledge=knowledge,
+        soul=soul,
         topic=elements["topic"],
         persona=elements["persona"],
         dynamic=elements["dynamic"],
@@ -369,11 +429,11 @@ def generate_conversation(idx: int):
     conversation_data = json.loads(content)
     messages = conversation_data['messages']
 
-    # Return messages along with metadata for debugging
     return {
         "messages": messages,
         "metadata": {
             "topic": elements["topic"],
+            "category": elements["category"],
             "persona": elements["persona"],
             "dynamic": elements["dynamic"],
         }
@@ -426,6 +486,8 @@ if __name__ == "__main__":
     print(f"Topic categories: {list(topics.keys())}")
     print(f"Personas: {len(personas)}")
     print(f"Dynamics: {len(dynamics)}")
+    print(f"Knowledge base: {knowledge_path}")
+    print(f"Soul document:  {soul_path}")
     print()
 
     completed_count = 0
@@ -455,8 +517,8 @@ if __name__ == "__main__":
                         f.write(json.dumps(messages) + '\n')
 
                 completed_count += 1
-                topic_short = metadata["topic"][:40] + "..." if len(metadata["topic"]) > 40 else metadata["topic"]
-                print(f"[{completed_count}/{args.num}] Topic: {topic_short}")
+                topic_short = metadata["topic"][:50] + "..." if len(metadata["topic"]) > 50 else metadata["topic"]
+                print(f"[{completed_count}/{args.num}] [{metadata['category']}] {topic_short}")
 
             except Exception as e:
                 error_count += 1
