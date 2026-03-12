@@ -1,0 +1,20 @@
+services:
+  nanochat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    runtime: nvidia
+    volumes:
+      - ./data:/root/.cache/nanochat
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - WANDB_RUN=${WANDB_RUN:-dummy}
+      - NANOCHAT_BASE_DIR=/root/.cache/nanochat
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
